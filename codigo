@@ -1,0 +1,281 @@
+Código Python, con ayuda de ChatGPT
+
+Simulación de Autómatas Celulares para 32 estados de México (versión simplificada)
+Colab de Google
+
+
+pip install numpy matplotlib pillow
+
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation, PillowWriter
+
+# -------------------------------------------------------
+# 1) Estados (clave, nombre, (lon, lat)) y vecindad simple
+# -------------------------------------------------------
+states = [
+    ("AGU", "Aguascalientes", (-102.3, 21.9)),
+    ("BCN", "Baja California", (-115.0, 32.5)),
+    ("BCS", "Baja California Sur", (-111.5, 24.0)),
+    ("CAM", "Campeche", (-90.5, 19.8)),
+    ("CHH", "Chihuahua", (-106.1, 28.6)),
+    ("CHP", "Chiapas", (-92.6, 16.8)),
+    ("COA", "Coahuila", (-101.0, 27.3)),
+    ("COL", "Colima", (-103.7, 19.2)),
+    ("DUR", "Durango", (-104.7, 24.0)),
+    ("GUA", "Guanajuato", (-101.3, 21.0)),
+    ("GRO", "Guerrero", (-99.8, 17.6)),
+    ("HGO", "Hidalgo", (-98.9, 20.5)),
+    ("JAL", "Jalisco", (-103.5, 20.7)),
+    ("MEX", "Estado de México", (-99.5, 19.3)),
+    ("MIC", "Michoacán", (-101.2, 19.7)),
+    ("MOR", "Morelos", (-99.0, 18.8)),
+    ("NAY", "Nayarit", (-104.9, 21.8)),
+    ("NLE", "Nuevo León", (-100.3, 25.6)),
+    ("OAX", "Oaxaca", (-96.7, 17.1)),
+    ("PUE", "Puebla", (-97.9, 19.0)),
+    ("QUE", "Querétaro", (-100.4, 20.6)),
+    ("QROO","Quintana Roo", (-88.9, 19.6)),
+    ("SLP", "San Luis Potosí", (-100.9, 22.2)),
+    ("SIN", "Sinaloa", (-107.5, 25.0)),
+    ("SON", "Sonora", (-110.1, 29.1)),
+    ("TAB", "Tabasco", (-92.8, 17.8)),
+    ("TAM", "Tamaulipas", (-98.8, 24.3)),
+    ("TLA", "Tlaxcala", (-98.2, 19.3)),
+    ("VER", "Veracruz", (-96.6, 19.2)),
+    ("YUC", "Yucatán", (-89.0, 20.9)),
+    ("ZAC", "Zacatecas", (-102.6, 23.1)),
+    ("CDMX","Ciudad de México", (-99.1, 19.4)),
+]
+
+# Grafo de vecindad aproximado (contigüidad terrestre)
+neighbors = {
+    "AGU": ["ZAC", "JAL"],
+    "BCN": ["SON"],
+    "BCS": [],  # península
+    "CAM": ["TAB", "YUC", "QROO"],
+    "CHH": ["SON", "SIN", "DUR", "COA"],
+    "CHP": ["OAX", "TAB"],
+    "COA": ["CHH", "DUR", "ZAC", "SLP", "NLE"],
+    "COL": ["JAL", "MIC"],
+    "DUR": ["CHH", "SIN", "NAY", "ZAC", "COA"],
+    "GUA": ["JAL", "ZAC", "SLP", "QUE", "MIC"],
+    "GRO": ["MIC", "MOR", "PUE", "OAX"],
+    "HGO": ["QUE", "MEX", "PUE", "TLA", "VER"],
+    "JAL": ["NAY", "DUR", "ZAC", "AGU", "GUA", "MIC", "COL"],
+    "MEX": ["MIC", "MOR", "CDMX", "HGO", "PUE", "QUE"],
+    "MIC": ["COL", "JAL", "GUA", "QUE", "MEX", "MOR", "GRO"],
+    "MOR": ["MEX", "CDMX", "PUE", "GRO"],
+    "NAY": ["SIN", "DUR", "ZAC", "JAL"],
+    "NLE": ["COA", "TAM", "SLP"],
+    "OAX": ["GRO", "PUE", "VER", "CHP"],
+    "PUE": ["GRO", "OAX", "VER", "HGO", "TLA", "MEX", "MOR"],
+    "QUE": ["SLP", "GUA", "HGO", "MEX", "MIC"],
+    "QROO": ["YUC", "CAM"],
+    "SLP": ["COA", "ZAC", "NLE", "TAM", "GUA", "QUE", "VER"],
+    "SIN": ["SON", "CHH", "DUR", "NAY"],
+    "SON": ["BCN", "CHH", "SIN"],
+    "TAB": ["VER", "CHP", "CAM"],
+    "TAM": ["NLE", "SLP", "VER"],
+    "TLA": ["PUE", "HGO"],
+    "VER": ["TAM", "SLP", "HGO", "PUE", "OAX", "TAB"],
+    "YUC": ["CAM", "QROO"],
+    "ZAC": ["DUR", "NAY", "JAL", "GUA", "SLP", "COA", "AGU"],
+    "CDMX": ["MEX", "MOR"],
+}
+
+# Índices y coordenadas
+idx_of = {s[0]: i for i, s in enumerate(states)}
+key_of = {i: s[0] for i, s in enumerate(states)}
+lons = np.array([s[2][0] for s in states])
+lats = np.array([s[2][1] for s in states])
+
+# -------------------------------------------------------
+# 2) Parámetros y estado inicial
+# -------------------------------------------------------
+T = 12                   # número de periodos (frames)
+random.seed(42)
+np.random.seed(42)
+
+delta = 0.05            # depreciación de E
+beta  = 0.35            # derrames vecinales
+theta = 0.0             # umbral en z-score para activación
+noise_scale = 0.08      # ruido en E
+
+gamma = 0.30            # sensibilidad L cuando hay activación y sube E
+eta   = 0.20            # sensibilidad L cuando no hay activación y cae E
+
+# E0 y L0 sintéticos (seeds culturales)
+E0 = {k: np.random.lognormal(mean=0.0, sigma=0.5) for k in idx_of.keys()}
+for k in ["CDMX", "JAL", "MEX", "NLE", "QROO"]:
+    E0[k] *= 2.0
+
+L0 = {k: 50 + 40*np.log1p(E0[k]) + np.random.normal(0, 2) for k in idx_of.keys()}
+
+E_vec = np.array([E0[key_of[i]] for i in range(len(states))])
+E_z = (E_vec - E_vec.mean()) / (E_vec.std() + 1e-6)
+A0 = (E_z >= theta).astype(int)  # activación inicial
+
+# -------------------------------------------------------
+# 3) Auxiliares: matriz de adyacencia y updates
+# -------------------------------------------------------
+def build_adjacency_matrix(keys, neighbors_dict):
+    n = len(keys)
+    A = np.zeros((n, n), dtype=float)
+    for i, k in enumerate(keys):
+        for nb in neighbors_dict.get(k, []):
+            if nb in idx_of:
+                j = idx_of[nb]
+                A[i, j] = 1.0
+                A[j, i] = 1.0
+    return A
+
+A_mat = build_adjacency_matrix([s[0] for s in states], neighbors)
+
+def update_E(E, A, active, delta, beta, noise_scale):
+    n = len(E)
+    E_next = np.zeros_like(E)
+    for i in range(n):
+        nb_idx = np.where(A[i] > 0)[0]
+        if len(nb_idx) > 0:
+            nb_active_idx = [j for j in nb_idx if active[j] == 1]
+            mean_nb_E = E[nb_active_idx].mean() if nb_active_idx else 0.0
+        else:
+            mean_nb_E = 0.0
+        noise = np.random.normal(0, noise_scale)
+        E_next[i] = (1 - delta) * E[i] + beta * mean_nb_E + noise
+    return E_next
+
+def update_activation(E):
+    z = (E - E.mean()) / (E.std() + 1e-6)
+    return (z >= theta).astype(int), z
+
+def update_L(L, E_prev, E_cur, active, gamma, eta):
+    dE = E_cur - E_prev
+    L_next = np.copy(L)
+    for i in range(len(L)):
+        if active[i] == 1 and dE[i] > 0:
+            L_next[i] = L[i] + gamma * dE[i] * 100  # escala para que se note
+        elif active[i] == 0 and dE[i] < 0:
+            L_next[i] = max(0, L[i] - eta * (-dE[i]) * 100)
+        else:
+            L_next[i] = L[i] + 0.05 * dE[i] * 100   # inercia leve
+    return L_next
+
+# -------------------------------------------------------
+# 4) Simulación
+# -------------------------------------------------------
+n = len(states)
+E_hist, L_hist, A_hist, Z_hist = [], [], [], []
+
+E_t = E_vec.copy()
+L_t = np.array([L0[key_of[i]] for i in range(n)])
+A_t = A0.copy()
+
+E_hist.append(E_t.copy())
+L_hist.append(L_t.copy())
+A_hist.append(A_t.copy())
+Z_hist.append(((E_t - E_t.mean())/(E_t.std()+1e-6)).copy())
+
+for t in range(1, T):
+    E_next = update_E(E_t, A_mat, A_t, delta, beta, noise_scale)
+    A_next, Z_next = update_activation(E_next)
+    L_next = update_L(L_t, E_t, E_next, A_next, gamma, eta)
+
+    E_hist.append(E_next.copy())
+    L_hist.append(L_next.copy())
+    A_hist.append(A_next.copy())
+    Z_hist.append(Z_next.copy())
+
+    E_t, L_t, A_t = E_next, L_next, A_next
+
+E_hist = np.stack(E_hist, axis=0)  # (T, n)
+L_hist = np.stack(L_hist, axis=0)  # (T, n)
+A_hist = np.stack(A_hist, axis=0)  # (T, n)
+Z_hist = np.stack(Z_hist, axis=0)  # (T, n)
+
+# -------------------------------------------------------
+# 5) Visualización y GIFs
+# -------------------------------------------------------
+x, y = lons, lats
+
+# Edges para trazar vecindad
+edges = []
+for i in range(n):
+    for j in range(i+1, n):
+        if A_mat[i, j] == 1:
+            edges.append((i, j))
+
+def draw_background(ax):
+    # Conexiones
+    for (i, j) in edges:
+        ax.plot([x[i], x[j]], [y[i], y[j]], lw=0.5, alpha=0.4)
+    # Etiquetas cortas (primer nombre)
+    for i, (_, name, _) in enumerate(states):
+        ax.text(x[i], y[i] + 0.25, name.split()[0], fontsize=6,
+                ha='center', va='bottom', alpha=0.8)
+
+# 5a) GIF para E (z-score)
+figE, axE = plt.subplots(figsize=(6, 6))
+scE = axE.scatter(x, y, s=120, c=Z_hist[0], vmin=-2, vmax=2)
+cbE = figE.colorbar(scE, ax=axE, fraction=0.046, pad=0.04)
+cbE.set_label("E (z-score)")
+axE.set_title("Simulación (E): Valor agregado cultural — t=0")
+axE.set_xlabel("Longitud"); axE.set_ylabel("Latitud")
+draw_background(axE)
+axE.set_xlim(x.min()-3, x.max()+3); axE.set_ylim(y.min()-3, y.max()+3)
+
+def update_frame_E(frame):
+    scE.set_array(Z_hist[frame])
+    axE.set_title(f"Simulación (E): Valor agregado cultural — t={frame}")
+    return (scE,)
+
+animE = FuncAnimation(figE, update_frame_E, frames=T, interval=800, blit=True)
+animE.save("simulacion_E.gif", writer=PillowWriter(fps=1))
+plt.close(figE)
+
+# 5b) GIF para L (normalizado por frame)
+def norm_L(vec):
+    v = (vec - vec.min()) / (vec.max() - vec.min() + 1e-9)
+    return v*2 - 1  # [-1, 1]
+
+figL, axL = plt.subplots(figsize=(6, 6))
+scL = axL.scatter(x, y, s=120, c=norm_L(L_hist[0]), vmin=-1, vmax=1)
+cbL = figL.colorbar(scL, ax=axL, fraction=0.046, pad=0.04)
+cbL.set_label("L (empleo, escala normalizada por frame)")
+axL.set_title("Simulación (L): Empleo cultural — t=0")
+axL.set_xlabel("Longitud"); axL.set_ylabel("Latitud")
+draw_background(axL)
+axL.set_xlim(x.min()-3, x.max()+3); axL.set_ylim(y.min()-3, y.max()+3)
+
+def update_frame_L(frame):
+    scL.set_array(norm_L(L_hist[frame]))
+    axL.set_title(f"Simulación (L): Empleo cultural — t={frame}")
+    return (scL,)
+
+animL = FuncAnimation(figL, update_frame_L, frames=T, interval=800, blit=True)
+animL.save("simulacion_L.gif", writer=PillowWriter(fps=1))
+plt.close(figL)
+
+# PNG final (E en último periodo)
+figE2, axE2 = plt.subplots(figsize=(6, 6))
+scE2 = axE2.scatter(x, y, s=120, c=Z_hist[-1], vmin=-2, vmax=2)
+cbE2 = figE2.colorbar(scE2, ax=axE2, fraction=0.046, pad=0.04)
+cbE2.set_label("E (z-score) — último periodo")
+axE2.set_title("Mapa de nodos y vecindad — último periodo (E)")
+axE2.set_xlabel("Longitud"); axE2.set_ylabel("Latitud")
+draw_background(axE2)
+axE2.set_xlim(x.min()-3, x.max()+3); axE2.set_ylim(y.min()-3, y.max()+3)
+plt.savefig("snapshot_E_tfinal.png", dpi=200)
+plt.close(figE2)
+
+from matplotlib.animation import FFMpegWriter
+
+# Para E
+writerE = FFMpegWriter(fps=1, bitrate=1800)
+animE.save("simulacion_E.mp4", writer=writerE)
+
+# Para L
+writerL = FFMpegWriter(fps=1, bitrate=1800)
+animL.save("simulacion_L.mp4", writer=writerL)
