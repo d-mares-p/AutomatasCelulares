@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 # -------------------------------------------------------
-# 1) Estados (clave, nombre, (lon, lat)) y vecindad simple
+# 1) Estados (clave, nombre, (long, lat)) y vecindad simple
 # -------------------------------------------------------
 states = [
     ("AGU", "Aguascalientes", (-102.3, 21.9)),
@@ -100,7 +100,7 @@ np.random.seed(42)
 
 delta = 0.05            # depreciación de E
 beta  = 0.35            # derrames vecinales
-theta = 0.0             # umbral en z-score para activación
+theta = 0.0             # umbral en valor de z para activación
 noise_scale = 0.08      # ruido en E
 
 gamma = 0.30            # sensibilidad L cuando hay activación y sube E
